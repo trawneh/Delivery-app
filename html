@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>لوحة التحكم - متابعة الميدان</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { font-family: sans-serif; margin: 0; display: flex; height: 100vh; }
+        #sidebar { width: 300px; background: #2c3e50; color: white; padding: 20px; box-sizing: border-box; }
+        #map { flex: 1; height: 100%; }
+        .driver-card { background: #34495e; padding: 10px; margin-bottom: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <h2>الكباتن في الميدان</h2>
+        <div id="drivers-list">في انتظار اتصال الكباتن...</div>
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const map = L.map('map').setView([31.9539, 35.9106], 12); // موقع عمان بالافتراضي
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        let markers = {};
+
+        // استقبال تحديثات الكباتن ورسمهم ع الخريطة
+        socket.on('ADMIN_UPDATE_DRIVERS', (drivers) => {
+            const listDiv = document.getElementById('drivers-list');
+            listDiv.innerHTML = '';
+
+            drivers.forEach(d => {
+                // تحديث القائمة الجانبية
+                listDiv.innerHTML += `
+                    <div class="driver-card">
+                        <strong>${d.name}</strong><br>
+                        الرصيد: ${d.walletBalance} دينار<br>
+                        الحالة: ${d.status}
+                    </div>
+                `;
+
+                // رسم الكابتن على الخريطة
+                if (markers[d.socketId]) {
+                    markers[d.socketId].setLatLng([d.lat, d.lng]);
+                } else {
+                    markers[d.socketId] = L.marker([d.lat, d.lng])
+                        .addTo(map)
+                        .bindPopup(`<b>${d.name}</b><br>رصيد: ${d.walletBalance} د.أ`);
+                }
+            });
+        });
+    </script>
+</body>
+</html>
