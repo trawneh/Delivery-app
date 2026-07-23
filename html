@@ -1,60 +1,318 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <title>لوحة التحكم - متابعة الميدان</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <style>
-        body { font-family: sans-serif; margin: 0; display: flex; height: 100vh; }
-        #sidebar { width: 300px; background: #2c3e50; color: white; padding: 20px; box-sizing: border-box; }
-        #map { flex: 1; height: 100%; }
-        .driver-card { background: #34495e; padding: 10px; margin-bottom: 10px; border-radius: 5px; }
-    </style>
+  <meta charset="UTF-8">
+  <title>لوحة تحكم رحلات+ - الإدارة والمحاسبة</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style> #map { height: 100vh; width: 100%; } </style>
 </head>
-<body>
+<body class="bg-gray-100 font-sans">
+  <div class="flex h-screen overflow-hidden">
+    
+    <!-- القائمة الجانبية -->
+    <div class="w-[440px] bg-slate-900 text-white shadow-2xl z-10 flex flex-col">
+      <div class="p-5 bg-gradient-to-r from-blue-600 to-indigo-700 flex justify-between items-center">
+        <h1 class="text-xl font-bold"><i class="fa-solid fa-route ml-2"></i> نظام رحلات+</h1>
+        <span id="status-badge" class="bg-red-500 text-xs px-2.5 py-1 rounded-full font-semibold">غير متصل</span>
+      </div>
 
-    <div id="sidebar">
-        <h2>الكباتن في الميدان</h2>
-        <div id="drivers-list">في انتظار اتصال الكباتن...</div>
+      <!-- تبديل الأقسام -->
+      <div class="grid grid-cols-4 bg-slate-800 p-2 gap-1 border-b border-slate-700 text-xs font-bold text-center">
+        <button onclick="switchTab('main')" id="btn-main" class="py-2 bg-blue-600 rounded-lg transition cursor-pointer">الرئيسية</button>
+        <button onclick="switchTab('drivers')" id="btn-drivers" class="py-2 bg-slate-700 rounded-lg transition cursor-pointer">الكباتن</button>
+        <button onclick="switchTab('restaurants')" id="btn-restaurants" class="py-2 bg-slate-700 rounded-lg transition cursor-pointer">المطاعم</button>
+        <button onclick="switchTab('settings')" id="btn-settings" class="py-2 bg-slate-700 rounded-lg transition cursor-pointer">الإعدادات</button>
+      </div>
+
+      <!-- محتوى الأقسام -->
+      <div class="p-4 flex-1 overflow-y-auto space-y-4">
+        
+        <!-- قسم الرئيسية -->
+        <div id="tab-main" class="space-y-4">
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-slate-800 p-3 rounded-xl border border-slate-700">
+              <p class="text-xs text-slate-400">إجمالي الأرباح</p>
+              <p id="total-revenue" class="text-lg font-bold text-emerald-400">0.00 JOD</p>
+            </div>
+            <div class="bg-slate-800 p-3 rounded-xl border border-slate-700">
+              <p class="text-xs text-slate-400">الرحلات المنفذة</p>
+              <p id="total-trips" class="text-lg font-bold text-blue-400">0</p>
+            </div>
+          </div>
+
+          <div>
+            <h2 class="text-slate-300 font-semibold mb-2">الكباتن المتصلون (<span id="drivers-count">0</span>)</h2>
+            <div id="drivers-list" class="space-y-2">
+              <p class="text-slate-500 text-sm text-center py-2">لا يوجد كباتن متصلون حالياً</p>
+            </div>
+          </div>
+
+          <div>
+            <h2 class="text-slate-300 font-semibold mb-2">الطلبات الحالية</h2>
+            <div id="orders-list" class="space-y-2">
+              <p class="text-slate-500 text-sm text-center py-2">لا توجد طلبات جديدة</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- قسم إدارة الكباتن (مع اختيار الصلاحية Admin / User) -->
+        <div id="tab-drivers" class="hidden space-y-4">
+          <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-3">
+            <h3 class="font-bold text-blue-400"><i class="fa-solid fa-user-plus ml-1"></i> إضافة حساب جديد للنظام</h3>
+            <input type="text" id="drv-name" placeholder="الاسم الكامل" class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2 text-sm text-white focus:outline-none">
+            <input type="text" id="drv-username" placeholder="اسم المستخدم (Username)" class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2 text-sm text-white focus:outline-none">
+            <input type="password" id="drv-password" placeholder="كلمة المرور (Password)" class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2 text-sm text-white focus:outline-none">
+            
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">نوع الصلاحية / الرتبة</label>
+              <select id="drv-role" class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2 text-sm text-white focus:outline-none">
+                <option value="user">مستخدم عادي (User)</option>
+                <option value="admin">مدير نظام (Admin)</option>
+              </select>
+            </div>
+
+            <button onclick="addDriverAccount()" class="w-full bg-blue-600 hover:bg-blue-500 py-2 rounded-lg font-bold text-sm transition cursor-pointer">حفظ الحساب</button>
+          </div>
+
+          <div>
+            <h2 class="text-slate-300 font-semibold mb-2">الحسابات المسجلة (<span id="reg-drivers-count">0</span>)</h2>
+            <div id="registered-drivers-list" class="space-y-2">
+              <p class="text-slate-500 text-sm text-center py-2">لا توجد حسابات مسجلة</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- قسم المطاعم -->
+        <div id="tab-restaurants" class="hidden space-y-4">
+          <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-3">
+            <h3 class="font-bold text-emerald-400"><i class="fa-solid fa-utensils ml-1"></i> إضافة مطعم جديد</h3>
+            <input type="text" id="rest-name" placeholder="اسم المطعم" class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2 text-sm text-white focus:outline-none">
+            <input type="text" id="rest-location" placeholder="العنوان / المنطقة" class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2 text-sm text-white focus:outline-none">
+            <input type="text" id="rest-category" placeholder="التصنيف (مثال: برجر، مشاوي)" class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2 text-sm text-white focus:outline-none">
+            <button onclick="addRestaurant()" class="w-full bg-emerald-600 hover:bg-emerald-500 py-2 rounded-lg font-bold text-sm transition cursor-pointer">حفظ وإضافة المطعم</button>
+          </div>
+
+          <div>
+            <h2 class="text-slate-300 font-semibold mb-2">قائمة المطاعم المضافة (<span id="rest-count">0</span>)</h2>
+            <div id="restaurants-list" class="space-y-2">
+              <p class="text-slate-500 text-sm text-center py-2">لا توجد مطاعم مسجلة</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- قسم الإعدادات (شكل تطبيق متكامل) -->
+        <div id="tab-settings" class="hidden space-y-4">
+          <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-4">
+            <h3 class="font-bold text-blue-400"><i class="fa-solid fa-gear ml-1"></i> إعدادات التطبيق العامة</h3>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">كلمة مرور الإدارة (لحماية عمليات الحذف)</label>
+              <input type="password" id="set-admin-pass" value="123" class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2 text-sm text-white">
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">نسبة خصم النظام من الرحلات (%)</label>
+              <input type="number" id="set-commission" value="15" class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2 text-sm text-white">
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">سعر فتحة العداء الافتتاحي (JOD)</label>
+              <input type="number" id="set-fare" value="1.00" step="0.25" class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2 text-sm text-white">
+            </div>
+            <div class="flex items-center justify-between pt-2 border-t border-slate-700">
+              <span class="text-sm">قبول الطلبات التلقائي</span>
+              <input type="checkbox" id="set-auto" checked class="w-4 h-4 accent-blue-600">
+            </div>
+            <button onclick="saveSettings()" class="w-full bg-blue-600 hover:bg-blue-500 py-2 rounded-lg font-bold text-sm transition cursor-pointer">حفظ إعدادات التطبيق</button>
+          </div>
+        </div>
+
+      </div>
     </div>
+    
+    <!-- الخريطة -->
+    <div class="flex-1 relative">
+      <div id="map"></div>
+    </div>
+  </div>
 
-    <div id="map"></div>
+  <script src="http://localhost:3000/socket.io/socket.io.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([31.9539, 35.9106], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="/socket.io/socket.io.js"></script>
-    <script>
-        const socket = io();
-        const map = L.map('map').setView([31.9539, 35.9106], 12); // موقع عمان بالافتراضي
+    const markers = {};
+    const socket = io('http://localhost:3000');
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    function switchTab(tab) {
+      ['main', 'drivers', 'restaurants', 'settings'].forEach(t => {
+        document.getElementById(`tab-${t}`).classList.add('hidden');
+        document.getElementById(`btn-${t}`).className = 'py-2 bg-slate-700 rounded-lg transition cursor-pointer';
+      });
+      document.getElementById(`tab-${tab}`).classList.remove('hidden');
+      document.getElementById(`btn-${tab}`).className = 'py-2 bg-blue-600 rounded-lg transition cursor-pointer';
+    }
 
-        let markers = {};
+    function addRestaurant() {
+      const name = document.getElementById('rest-name').value;
+      const location = document.getElementById('rest-location').value;
+      const category = document.getElementById('rest-category').value;
 
-        // استقبال تحديثات الكباتن ورسمهم ع الخريطة
-        socket.on('ADMIN_UPDATE_DRIVERS', (drivers) => {
-            const listDiv = document.getElementById('drivers-list');
-            listDiv.innerHTML = '';
+      if(!name || !location) {
+        alert('الرجاء إدخال اسم المطعم والعنوان');
+        return;
+      }
 
-            drivers.forEach(d => {
-                // تحديث القائمة الجانبية
-                listDiv.innerHTML += `
-                    <div class="driver-card">
-                        <strong>${d.name}</strong><br>
-                        الرصيد: ${d.walletBalance} دينار<br>
-                        الحالة: ${d.status}
-                    </div>
-                `;
+      socket.emit('ADD_RESTAURANT', { name, location, category });
+      document.getElementById('rest-name').value = '';
+      document.getElementById('rest-location').value = '';
+      document.getElementById('rest-category').value = '';
+    }
 
-                // رسم الكابتن على الخريطة
-                if (markers[d.socketId]) {
-                    markers[d.socketId].setLatLng([d.lat, d.lng]);
-                } else {
-                    markers[d.socketId] = L.marker([d.lat, d.lng])
-                        .addTo(map)
-                        .bindPopup(`<b>${d.name}</b><br>رصيد: ${d.walletBalance} د.أ`);
-                }
-            });
+    // دالة حذف المطعم مع طلب كلمة المرور
+    function deleteRestaurant(id) {
+      const password = prompt('أدخل كلمة مرور الإدارة (Admin Password) لتأكيد الحذف:');
+      if (password) {
+        socket.emit('DELETE_RESTAURANT', { id, password });
+      }
+    }
+
+    function addDriverAccount() {
+      const name = document.getElementById('drv-name').value;
+      const username = document.getElementById('drv-username').value;
+      const password = document.getElementById('drv-password').value;
+      const role = document.getElementById('drv-role').value;
+
+      if(!name || !username || !password) {
+        alert('الرجاء تعبئة جميع الحقول');
+        return;
+      }
+
+      socket.emit('ADD_DRIVER_ACCOUNT', { name, username, password, role });
+      document.getElementById('drv-name').value = '';
+      document.getElementById('drv-username').value = '';
+      document.getElementById('drv-password').value = '';
+    }
+
+    // دالة حذف الحساب مع طلب كلمة المرور
+    function deleteDriverAccount(id) {
+      const password = prompt('أدخل كلمة مرور الإدارة (Admin Password) لتأكيد الحذف:');
+      if (password) {
+        socket.emit('DELETE_DRIVER_ACCOUNT', { id, password });
+      }
+    }
+
+    function saveSettings() {
+      const adminPassword = document.getElementById('set-admin-pass').value;
+      const commissionRate = document.getElementById('set-commission').value;
+      const baseFare = document.getElementById('set-fare').value;
+      const autoAccept = document.getElementById('set-auto').checked;
+
+      socket.emit('UPDATE_SETTINGS', { adminPassword, commissionRate, baseFare, autoAccept });
+      alert('تم تحديث إعدادات التطبيق بنجاح!');
+    }
+
+    socket.on('ACTION_ERROR', (msg) => {
+      alert(msg);
+    });
+
+    socket.on('connect', () => {
+      const b = document.getElementById('status-badge');
+      b.className = 'bg-emerald-500 text-xs px-2.5 py-1 rounded-full font-semibold animate-pulse';
+      b.innerText = 'متصل بالسيرفر';
+    });
+
+    socket.on('disconnect', () => {
+      const b = document.getElementById('status-badge');
+      b.className = 'bg-red-500 text-xs px-2.5 py-1 rounded-full font-semibold';
+      b.innerText = 'غير متصل';
+    });
+
+    socket.on('ADMIN_UPDATE_DATA', (data) => {
+      const driversList = document.getElementById('drivers-list');
+      const ordersList = document.getElementById('orders-list');
+      const restaurantsList = document.getElementById('restaurants-list');
+      const regDriversList = document.getElementById('registered-drivers-list');
+      
+      document.getElementById('drivers-count').innerText = data.drivers.length;
+      
+      let totalRev = 0;
+      let totalTripsCount = 0;
+
+      driversList.innerHTML = '';
+      if(data.drivers.length === 0) {
+        driversList.innerHTML = '<p class="text-slate-500 text-sm text-center py-2">لا يوجد كباتن متصلون حالياً</p>';
+      } else {
+        data.drivers.forEach(d => {
+          totalRev += (d.earnings || 0);
+          totalTripsCount += (d.completedTrips || 0);
+
+          const item = document.createElement('div');
+          item.className = 'p-3 bg-slate-800 border border-slate-700 rounded-xl text-sm flex justify-between items-center';
+          item.innerHTML = `<div><p class="font-bold text-white">${d.name}</p><p class="text-xs text-blue-400">${d.status}</p></div><div class="text-left"><span class="text-xs font-bold text-yellow-400">${d.earnings || 0} JOD</span></div>`;
+          driversList.appendChild(item);
+
+          if(d.lat && d.lng) {
+            if(markers[d.socketId]) {
+              markers[d.socketId].setLatLng([d.lat, d.lng]);
+            } else {
+              const icon = L.divIcon({
+                className: 'custom-icon',
+                html: `<div style="background: #2563eb; color: white; padding: 6px 12px; border-radius: 20px; font-weight: bold; font-size: 13px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 6px; white-space: nowrap; border: 2px solid white;"><i class="fa-solid fa-car"></i><span>${d.name}</span></div>`,
+                iconSize: [100, 40],
+                iconAnchor: [50, 20]
+              });
+              const m = L.marker([d.lat, d.lng], { icon }).addTo(map);
+              markers[d.socketId] = m;
+            }
+          }
         });
-    </script>
+      }
+
+      document.getElementById('total-revenue').innerText = totalRev.toFixed(2) + ' JOD';
+      document.getElementById('total-trips').innerText = totalTripsCount;
+
+      ordersList.innerHTML = '';
+      if(!data.orders || data.orders.length === 0) {
+        ordersList.innerHTML = '<p class="text-slate-500 text-sm text-center py-2">لا توجد طلبات جديدة</p>';
+      } else {
+        data.orders.forEach(o => {
+          const orderItem = document.createElement('div');
+          orderItem.className = 'p-3 bg-slate-800 border border-slate-700 rounded-xl text-sm';
+          orderItem.innerHTML = `<div class="flex justify-between font-bold text-white mb-1"><span>${o.clientName}</span><span class="text-emerald-400">${o.fare} JOD</span></div><p class="text-xs text-slate-400">من: ${o.pickup} ➔ إلى: ${o.dropoff}</p>`;
+          ordersList.appendChild(orderItem);
+        });
+      }
+
+      // المطاعم (مع زر الحذف الذي يطلب كلمة المرور)
+      document.getElementById('rest-count').innerText = data.restaurants ? data.restaurants.length : 0;
+      restaurantsList.innerHTML = '';
+      if(!data.restaurants || data.restaurants.length === 0) {
+        restaurantsList.innerHTML = '<p class="text-slate-500 text-sm text-center py-2">لا توجد مطاعم مسجلة</p>';
+      } else {
+        data.restaurants.forEach(r => {
+          const restItem = document.createElement('div');
+          restItem.className = 'p-3 bg-slate-800 border border-slate-700 rounded-xl text-sm flex justify-between items-center';
+          restItem.innerHTML = `<div><p class="font-bold text-white">${r.name}</p><p class="text-xs text-emerald-400">${r.location} (${r.category})</p></div><button onclick="deleteRestaurant('${r.id}')" class="bg-red-500 hover:bg-red-600 px-2.5 py-1 rounded text-white text-xs transition cursor-pointer"><i class="fa-solid fa-trash"></i></button>`;
+          restaurantsList.appendChild(restItem);
+        });
+      }
+
+      // حسابات المستخدمين والكباتن (مع تمييز Admin عن User وعرض زر الحذف المحمي)
+      document.getElementById('reg-drivers-count').innerText = data.registeredDrivers ? data.registeredDrivers.length : 0;
+      regDriversList.innerHTML = '';
+      if(!data.registeredDrivers || data.registeredDrivers.length === 0) {
+        regDriversList.innerHTML = '<p class="text-slate-500 text-sm text-center py-2">لا توجد حسابات مسجلة</p>';
+      } else {
+        data.registeredDrivers.forEach(drv => {
+          const roleBadge = drv.role === 'admin' ? '<span class="bg-purple-600 text-[10px] px-1.5 py-0.5 rounded text-white ml-1">Admin</span>' : '<span class="bg-slate-700 text-[10px] px-1.5 py-0.5 rounded text-slate-300 ml-1">User</span>';
+          const drvItem = document.createElement('div');
+          drvItem.className = 'p-3 bg-slate-800 border border-slate-700 rounded-xl text-sm flex justify-between items-center';
+          drvItem.innerHTML = `<div><div class="flex items-center"><p class="font-bold text-white">${drv.name}</p>${roleBadge}</div><p class="text-xs text-blue-400">يوزر: ${drv.username}</p></div><button onclick="deleteDriverAccount('${drv.id}')" class="bg-red-500 hover:bg-red-600 px-2.5 py-1 rounded text-white text-xs transition cursor-pointer"><i class="fa-solid fa-trash"></i></button>`;
+          regDriversList.appendChild(drvItem);
+        });
+      }
+    });
+  </script>
 </body>
 </html>
