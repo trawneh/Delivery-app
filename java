@@ -1,92 +1,126 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const cors = require('cors');
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
-
+app.use(cors());
 app.use(express.json());
 
-// قاعدة بيانات مبسطة في الذاكرة (Memory Storage)
-let drivers = {}; // الكباتن
-let orders = [];  // الطلبات
-
-// 1. API للمطعم لطلب سيارة جديدة
-app.post('/api/orders/create', (req, res) => {
-    const { restaurantName, customerAddress, deliveryFee, orderAmount } = req.body;
-    
-    const newOrder = {
-        id: 'ORD-' + Math.floor(1000 + Math.random() * 9000),
-        restaurantName,
-        customerAddress,
-        deliveryFee,
-        orderAmount,
-        status: 'PENDING', // معلق في انتظار كابتن
-        assignedDriver: null,
-        createdAt: new Date()
-    };
-
-    orders.push(newOrder);
-
-    // إرسال إشعار لحظي لجميع الكباتن المتاحين (Broadcast)
-    io.emit('NEW_ORDER_AVAILABLE', newOrder);
-
-    res.json({ success: true, message: 'تم إرسال الطلب للكباتن', order: newOrder });
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
-// Socket.io للاتصال اللحظي والخرائط
+const activeDrivers = new Map();
+const activeOrders = new Map();
+let restaurants = [];
+let registeredDrivers = [];
+
+// إعدادات النظام الافتراضية
+let systemSettings = {
+  adminPassword: "123", // كلمة مرور الإدارة الافتراضية لحماية عمليات الحذف
+  commissionRate: 15,
+  baseFare: 1.00,
+  autoAccept: true
+};
+
 io.on('connection', (socket) => {
-    console.log('مستخدم جديد اتصل:', socket.id);
+  console.log(`> اتصال جديد: ${socket.id}`);
 
-    // تسجيل الكابتن وتحديث موقعه
-    socket.on('UPDATE_DRIVER_LOCATION', (data) => {
-        // data = { driverId, name, lat, lng, walletBalance }
-        drivers[socket.id] = {
-            ...data,
-            socketId: socket.id,
-            status: data.status || 'AVAILABLE'
-        };
-        // تحديث الخريطة في لوحة التحكم فورا
-        io.emit('ADMIN_UPDATE_DRIVERS', Object.values(drivers));
+  broadcastData();
+
+  socket.on('UPDATE_LOCATION', (data) => {
+    activeDrivers.set(socket.id, {
+      socketId: socket.id,
+      name: data.name || 'كابتن',
+      lat: data.lat,
+      lng: data.lng,
+      status: data.status || 'متصل',
+      earnings: data.earnings || 0,
+      completedTrips: data.completedTrips || 0
     });
+    broadcastData();
+  });
 
-    // أول كابتن يضغط "قبول الطلب"
-    socket.on('ACCEPT_ORDER', ({ orderId, driverId, driverName }) => {
-        let order = orders.find(o => o.id === orderId && o.status === 'PENDING');
+  socket.on('CREATE_ORDER', (orderData) => {
+    const orderId = 'ORD-' + Math.floor(1000 + Math.random() * 9000);
+    const newOrder = {
+      id: orderId,
+      clientName: orderData.clientName,
+      pickup: orderData.pickup,
+      dropoff: orderData.dropoff,
+      fare: orderData.fare,
+      status: 'قيد الانتظار'
+    };
+    activeOrders.set(orderId, newOrder);
+    broadcastData();
+  });
 
-        if (order) {
-            const systemCommission = order.deliveryFee * 0.10; // خصم 10% نسبة التطبيق
-
-            // خصم النسبة من محفظة الكابتن
-            if (drivers[socket.id]) {
-                drivers[socket.id].walletBalance -= systemCommission;
-            }
-
-            order.status = 'ACCEPTED';
-            order.assignedDriver = { driverId, driverName };
-
-            // إعلام جميع الكباتن إن الطلب انأخذ خلاص
-            io.emit('ORDER_TAKEN', { orderId });
-            
-            // إعلام المطعم إن الكابتن قبل الطلب مع الوقت التقديري
-            io.emit(`ORDER_STATUS_${orderId}`, {
-                status: 'ACCEPTED',
-                driverName: driverName,
-                estimatedArrivalMinutes: 8 // وقت تقديري للوصول
-            });
-
-            console.log(`الطلب ${orderId} قبله الكابتن ${driverName}. خصم عمولة: ${systemCommission}`);
-        } else {
-            socket.emit('ORDER_ACCEPT_FAILED', { message: 'للأسف، كابتن آخر أخذ الطلب قبلك!' });
-        }
+  socket.on('ADD_RESTAURANT', (restData) => {
+    restaurants.push({
+      id: 'REST-' + Date.now(),
+      name: restData.name,
+      location: restData.location,
+      category: restData.category || 'عام'
     });
+    broadcastData();
+  });
 
-    socket.on('disconnect', () => {
-        delete drivers[socket.id];
-        io.emit('ADMIN_UPDATE_DRIVERS', Object.values(drivers));
+  // حذف مطعم مع التحقق من كلمة المرور
+  socket.on('DELETE_RESTAURANT', ({ id, password }) => {
+    if (password === systemSettings.adminPassword) {
+      restaurants = restaurants.filter(r => r.id !== id);
+      broadcastData();
+    } else {
+      socket.emit('ACTION_ERROR', 'كلمة مرور الإدارة غير صحيحة!');
+    }
+  });
+
+  socket.on('ADD_DRIVER_ACCOUNT', (driverData) => {
+    registeredDrivers.push({
+      id: 'DRV-' + Date.now(),
+      name: driverData.name,
+      username: driverData.username,
+      password: driverData.password,
+      role: driverData.role || 'user' // تحديد الصلاحية (Admin أو User عادي)
     });
+    broadcastData();
+  });
+
+  // حذف كابتن مع التحقق من كلمة المرور
+  socket.on('DELETE_DRIVER_ACCOUNT', ({ id, password }) => {
+    if (password === systemSettings.adminPassword) {
+      registeredDrivers = registeredDrivers.filter(d => d.id !== id);
+      broadcastData();
+    } else {
+      socket.emit('ACTION_ERROR', 'كلمة مرور الإدارة غير صحيحة!');
+    }
+  });
+
+  // تحديث إعدادات التطبيق
+  socket.on('UPDATE_SETTINGS', (newSettings) => {
+    systemSettings = { ...systemSettings, ...newSettings };
+    broadcastData();
+  });
+
+  socket.on('disconnect', () => {
+    activeDrivers.delete(socket.id);
+    broadcastData();
+    console.log(`> انقطع الاتصال: ${socket.id}`);
+  });
 });
 
-const PORT = 3000;
-server.listen(PORT, () => console.log(`السيرفر شغال على المنفذ: http://localhost:${PORT}`));
+function broadcastData() {
+  io.emit('ADMIN_UPDATE_DATA', {
+    drivers: Array.from(activeDrivers.values()),
+    orders: Array.from(activeOrders.values()),
+    restaurants: restaurants,
+    registeredDrivers: registeredDrivers,
+    settings: systemSettings
+  });
+}
+
+server.listen(3000, () => {
+  console.log('🚀 سيرفر رحلات+ شغال ومستقر على المنفذ 3000');
+});
